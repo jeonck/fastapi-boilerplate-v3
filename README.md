@@ -34,6 +34,7 @@ Register → login → create items → cached stats → rate limit → cached e
 - **FastAPI-Cache** — `@cache` decorator with namespace-based invalidation after writes
 - **Redis optional** — in-memory backends by default; set `REDIS_URL` to share limits/cache across workers
 - **SQLAlchemy 2.0** — async engine (FastAPI Users) + sync engine (CrudRouter), SQLite by default
+- **Data integrity by design** — money as `NUMERIC`/`Decimal`, business rules as DB constraints, constraint violations → `409 Conflict` ([design guide](docs/design-guide.md))
 - **GZip** response compression
 - **UV**, **Jinja2 + Bootstrap 5** playground page, **pytest** suite, `./run.sh` — same as V2
 
@@ -54,7 +55,9 @@ fastapi-boilerplate-v3/
 │   │   ├── users.py              # FastAPI Users setup (UserManager, JWT backend)
 │   │   ├── limiter.py            # FastAPI-Limiter setup (rate_limit dependency)
 │   │   ├── cache.py              # FastAPI-Cache setup (backend, key builder)
-│   │   └── crudrouter_compat.py  # CrudRouter Pydantic v2 patch
+│   │   ├── crud.py               # CRUDRouter (IntegrityError -> 409)
+│   │   ├── crudrouter_compat.py  # CrudRouter Pydantic v2 patch
+│   │   └── errors.py             # IntegrityError -> 409 Conflict handler
 │   ├── models/                   # SQLAlchemy ORM models
 │   │   ├── user.py
 │   │   └── item.py
@@ -67,6 +70,9 @@ fastapi-boilerplate-v3/
 │   ├── static/                   # CSS, JS
 │   ├── templates/                # Jinja2 templates (playground page)
 │   └── main.py                   # Application entry point
+├── docs/
+│   ├── design-guide.md           # Data design guide (NULL, bitemporal, money, time, soft delete, constraints)
+│   └── images/                   # README screenshots
 ├── tests/                        # pytest suite (auth, items, limiter, cache, ...)
 ├── .env.example
 ├── pyproject.toml
@@ -155,7 +161,7 @@ curl -X POST localhost:8000/api/auth/register -H 'Content-Type: application/json
 TOKEN=$(curl -s -X POST localhost:8000/api/auth/jwt/login \
      -d 'username=me@example.com&password=secret123' | python -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
 curl -X POST localhost:8000/api/items -H "Authorization: Bearer $TOKEN" \
-     -H 'Content-Type: application/json' -d '{"name":"Keyboard","price":49.9}'
+     -H 'Content-Type: application/json' -d '{"name":"Keyboard","price":"49.90"}'
 curl -i localhost:8000/api/stats/items     # X-FastAPI-Cache: MISS, then HIT
 ```
 
@@ -168,10 +174,9 @@ curl -i localhost:8000/api/stats/items     # X-FastAPI-Cache: MISS, then HIT
 3. Router in `app/api/`:
 
 ```python
-import app.core.crudrouter_compat  # noqa: F401  (import before CrudRouter)
-from fastapi_crudrouter import SQLAlchemyCRUDRouter
+from app.core.crud import CRUDRouter   # SQLAlchemyCRUDRouter + Pydantic v2 patch + 409
 
-router = SQLAlchemyCRUDRouter(
+router = CRUDRouter(
     schema=Product, create_schema=ProductCreate, update_schema=ProductCreate,
     db_model=ProductModel, db=get_db, prefix="products",
     dependencies=[Depends(rate_limit())],
@@ -180,6 +185,10 @@ router = SQLAlchemyCRUDRouter(
 ```
 
 4. `app.include_router(router, prefix="/api")` in `app/main.py`
+
+Put business rules in the model as constraints (`unique=True`, `CheckConstraint`, ...), not as
+`if exists: raise` checks in Python — those race under concurrent requests. Violations are
+answered with `409 Conflict` by the handler in `app/core/errors.py`.
 
 To customize a generated route, override it with the same path, e.g. `@router.get("")`, or disable it with `get_all_route=False`.
 
@@ -244,7 +253,7 @@ For PostgreSQL: `DATABASE_URL=postgresql+asyncpg://...` and `uv add asyncpg "psy
 ./test_quick.sh      # live server smoke test
 ```
 
-Tests use a temporary SQLite database and cover health, pages, auth, CRUD, rate limiting and caching.
+Tests use a temporary SQLite database and cover health, pages, auth, CRUD, data integrity (Decimal money, constraints → 409), rate limiting and caching.
 
 ## 🚀 Deployment
 
@@ -258,9 +267,22 @@ Production checklist:
 - Use PostgreSQL and Alembic migrations instead of `create_all`
 - Behind a proxy, make sure `X-Forwarded-For` is set by a trusted proxy (the limiter keys on it)
 
+## 🧭 Data Design Guide
+
+[`docs/design-guide.md`](docs/design-guide.md) (Korean) covers six data-design pitfalls that cause production incidents, with SQLAlchemy/Pydantic snippets:
+
+1. Separate the meanings of `NULL` (status enums + CHECK)
+2. Bitemporal history (insert, don't overwrite)
+3. Money as `Decimal`, FX snapshot at event time — **applied** (`Item.price`)
+4. Future events as wall-clock time + IANA time zone
+5. Soft delete with partial unique indexes
+6. Business rules as DB constraints, violations → `409` — **applied** (`uq_items_name`, `app/core/errors.py`)
+
+> Upgrading from an earlier version of this boilerplate? `Item.price` changed from `FLOAT` to `NUMERIC(12,2)` and new constraints were added. `create_all` does not alter existing tables, so delete `app.db` (dev) or write an Alembic migration.
+
 ## ⚠️ Notes on library versions
 
-- **fastapi-crudrouter 0.8.6** targets Pydantic v1; `app/core/crudrouter_compat.py` patches the two helpers that break on Pydantic v2.
+- **fastapi-crudrouter 0.8.6** targets Pydantic v1; `app/core/crudrouter_compat.py` patches the two helpers that break on Pydantic v2. It also turns every `IntegrityError` into a `422` (on update, with the raw DB error message); `app/core/crud.py` lets them reach the global `409` handler instead.
 - **fastapi-limiter 0.2.0** (pyrate-limiter based) scans `app.routes` and shares one bucket between all clients. `app/core/limiter.py` subclasses `RateLimiter` and uses a per-client bucket factory to fix both.
 
 ## 📄 License

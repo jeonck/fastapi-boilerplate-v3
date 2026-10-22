@@ -61,4 +61,8 @@ def auth_headers(client: TestClient, sample_user_data):
 @pytest.fixture
 def sample_item_data():
     """Sample item data for testing."""
-    return {"name": f"item_{uuid.uuid4().hex[:8]}", "description": "test", "price": 10.5}
+    return {
+        "name": f"item_{uuid.uuid4().hex[:8]}",
+        "description": "test",
+        "price": "10.50",
+    }

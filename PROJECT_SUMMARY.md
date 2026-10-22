@@ -45,6 +45,12 @@ cp .env.example .env     # SECRET_KEY 변경
 - 요청(method + path + query) 기반 캐시 키 → DB 세션 의존성이 있어도 정상 캐싱
 - 기본 인메모리, `REDIS_URL` 설정 시 Redis 백엔드
 
+#### 🧱 데이터 무결성 (`docs/design-guide.md`)
+- 금액은 `NUMERIC(12,2)` / `Decimal` (JSON은 문자열, 소수 셋째 자리는 422)
+- 비즈니스 규칙은 DB 제약으로: `uq_items_name`(UNIQUE), `ck_items_price_non_negative`(CHECK)
+- `IntegrityError` → `409 Conflict` 전역 핸들러 (SQL/제약 이름 노출 없음)
+- NULL 의미 분리, 비템포럴 이력, 환율 스냅샷, 벽시계 시간, 소프트 딜리트는 설계 가이드로 정리
+
 #### ➕ 추가 구성
 - SQLAlchemy 2.0 (FastAPI Users용 async 엔진 + CrudRouter용 sync 엔진, 동일 DB)
 - GZip 응답 압축
@@ -52,13 +58,13 @@ cp .env.example .env     # SECRET_KEY 변경
 
 ### 🧪 테스트 커버리지
 
-`./run.sh test` — 29개 테스트
+`./run.sh test` — 35개 테스트
 
 - `test_health.py`, `test_main.py`: 헬스체크, 페이지, 문서, OpenAPI
 - `test_auth.py`: 가입/중복/권한상승 차단/로그인 실패/토큰/보호 엔드포인트
-- `test_items.py`: CRUD 흐름, 검증, 페이지네이션, 권한(로그인/슈퍼유저)
+- `test_items.py`: CRUD 흐름, 검증, 페이지네이션, 권한(로그인/슈퍼유저), Decimal 금액, 중복 이름 409(생성·수정), DB CHECK 제약
 - `test_limiter.py`: 429 발생, 클라이언트별 독립 제한
-- `test_cache.py`: 캐시 HIT, 쓰기 후 무효화, 캐시 삭제 권한
+- `test_cache.py`: 캐시 HIT, 쓰기 후 무효화, HIT/MISS 응답 동일성, 금액 합계 정확성(0.10 + 0.20 = 0.30), 캐시 삭제 권한
 
 `./test_quick.sh` — 실제 서버를 띄워 모든 기능을 curl로 스모크 테스트
 

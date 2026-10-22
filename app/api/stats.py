@@ -6,6 +6,7 @@ for 60 seconds and invalidated whenever an item is created/updated/deleted.
 """
 
 from datetime import datetime, timezone
+from decimal import ROUND_HALF_UP, Decimal
 
 from fastapi import APIRouter, Depends
 from fastapi_cache.decorator import cache
@@ -36,14 +37,17 @@ async def item_stats(session: AsyncSession = Depends(get_async_session)):
     result = await session.execute(
         select(
             func.count(ItemModel.id),
-            func.coalesce(func.sum(ItemModel.price), 0.0),
-            func.coalesce(func.avg(ItemModel.price), 0.0),
+            func.coalesce(func.sum(ItemModel.price), 0),
         )
     )
-    total, total_value, average = result.one()
+    total, total_value = result.one()
+    total_value = Decimal(str(total_value))
+    average = total_value / total if total else Decimal("0")
+
+    cents = Decimal("0.01")
     return ItemStats(
         total_items=total,
-        total_value=round(float(total_value), 2),
-        average_price=round(float(average), 2),
+        total_value=total_value.quantize(cents, rounding=ROUND_HALF_UP),
+        average_price=average.quantize(cents, rounding=ROUND_HALF_UP),
         generated_at=datetime.now(timezone.utc),
     )

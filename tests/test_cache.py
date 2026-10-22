@@ -29,6 +29,26 @@ def test_item_stats_cache_invalidation(client: TestClient, auth_headers, sample_
     assert after.headers["X-FastAPI-Cache"] == "MISS"
     assert after.json()["total_items"] == before.json()["total_items"] + 1
 
+    # Cached (HIT) and fresh (MISS) responses serialize money identically
+    cached = client.get("/api/stats/items")
+    assert cached.headers["X-FastAPI-Cache"] == "HIT"
+    assert cached.json() == after.json()
+
+
+def test_item_stats_money_is_exact(client: TestClient, auth_headers, sample_item_data):
+    """0.10 + 0.20 is exactly 0.30 (it would be 0.30000000000000004 with floats)."""
+    from decimal import Decimal
+
+    before = client.get("/api/stats/items").json()
+    for i, price in enumerate(["0.10", "0.20"]):
+        client.post(
+            "/api/items",
+            json={**sample_item_data, "name": f"{sample_item_data['name']}_{i}", "price": price},
+            headers=auth_headers,
+        )
+    after = client.get("/api/stats/items").json()
+    assert Decimal(after["total_value"]) - Decimal(before["total_value"]) == Decimal("0.30")
+
 
 def test_clear_cache_requires_superuser(client: TestClient, auth_headers):
     """Only superusers can clear the whole cache."""

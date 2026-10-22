@@ -11,6 +11,7 @@ Full CRUD endpoints for the Item resource are generated automatically:
 - DELETE /items           Delete all items (superuser only)
 
 Every route is rate limited, and write routes invalidate the "items" cache.
+A duplicate name violates the `uq_items_name` constraint -> 409 Conflict.
 """
 
 from typing import AsyncGenerator
@@ -18,9 +19,7 @@ from typing import AsyncGenerator
 from fastapi import Depends
 from fastapi_cache import FastAPICache
 
-import app.core.crudrouter_compat  # noqa: F401  (must be imported before CrudRouter)
-from fastapi_crudrouter import SQLAlchemyCRUDRouter
-
+from app.core.crud import CRUDRouter
 from app.core.database import get_db
 from app.core.limiter import rate_limit
 from app.core.users import current_active_user, current_superuser
@@ -38,7 +37,7 @@ async def invalidate_items_cache() -> AsyncGenerator[None, None]:
 
 write_dependencies = [Depends(current_active_user), Depends(invalidate_items_cache)]
 
-router = SQLAlchemyCRUDRouter(
+router = CRUDRouter(
     schema=Item,
     create_schema=ItemCreate,
     update_schema=ItemCreate,

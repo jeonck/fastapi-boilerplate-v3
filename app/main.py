@@ -20,6 +20,7 @@ from pathlib import Path
 from app.core.cache import init_cache
 from app.core.config import Settings, get_settings
 from app.core.database import async_engine, create_db_and_tables
+from app.core.errors import register_exception_handlers
 from app.api import (
     auth_router,
     demo_router,
@@ -124,6 +125,9 @@ async def favicon():
 
 
 # Custom exception handlers
+register_exception_handlers(app)  # IntegrityError -> 409 Conflict
+
+
 @app.exception_handler(404)
 async def not_found_handler(request: Request, exc):
     """Custom 404 error handler for API endpoints."""

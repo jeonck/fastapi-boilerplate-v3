@@ -202,7 +202,14 @@ function showText(elementId, text) {
 
 async function request(url, options = {}) {
     const started = performance.now();
-    const response = await fetch(url, options);
+    // Bypass the *browser* HTTP cache so X-FastAPI-Cache shows the server's real HIT/MISS.
+    // The explicit Cache-Control header stops fetch from sending "no-cache",
+    // which would make FastAPI-Cache skip its cache.
+    const response = await fetch(url, {
+        ...options,
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'max-age=0', ...(options.headers || {}) },
+    });
     const elapsed = Math.round(performance.now() - started);
     let body;
     try { body = await response.json(); } catch { body = null; }

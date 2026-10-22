@@ -9,6 +9,23 @@ A production-ready FastAPI boilerplate that bundles the four extensions most API
 | **FastAPI-Limiter** | 트래픽 제한 | "서버 마비를 막는 방패" |
 | **FastAPI-Cache** | 응답 캐싱 | "서버 성능 10배 끌어올리기" |
 
+![Home](docs/images/home.png)
+
+## 📸 Screenshots
+
+### Playground (`/`)
+
+Register → login → create items → cached stats → rate limit → cached endpoint, all from the browser.
+
+![Playground](docs/images/playground.png)
+
+<details>
+<summary><b>Swagger UI (<code>/docs</code>)</b></summary>
+
+![Swagger UI](docs/images/swagger.png)
+
+</details>
+
 ## 🚀 Features
 
 - **FastAPI Users** — register, JWT login/logout, password reset, email verification, `/users/me`, superuser-only user management
